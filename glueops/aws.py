@@ -18,7 +18,6 @@ def get_resource_arns_using_tags(tags, aws_resource_filters):
         TagFilters=[
             {'Key': key, 'Values': [value]} for key, value in tags.items()
         ],
-        # ['cloudfront:distribution'] or ['acm:certificate']
         ResourceTypeFilters=aws_resource_filters
     )
 
