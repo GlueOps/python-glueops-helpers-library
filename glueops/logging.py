@@ -20,14 +20,16 @@ def configure(name=None, level=logging.INFO):
     if name is None:
         frame = inspect.stack()[1]
         module = inspect.getmodule(frame[0])
-        name = module.__name__
-
-    json_formatter = JsonFormatter()
-    handler = logging.StreamHandler()
-    handler.setFormatter(json_formatter)
+        name = module.__name__ if module else "defaultLogger"
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    logger.addHandler(handler)
+
+    # Check if logger already has handlers attached, to avoid duplicate logs
+    if not logger.hasHandlers():
+        json_formatter = JsonFormatter()
+        handler = logging.StreamHandler()
+        handler.setFormatter(json_formatter)
+        logger.addHandler(handler)
 
     return logger
