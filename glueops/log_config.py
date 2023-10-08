@@ -1,5 +1,6 @@
 import logging
 import json
+import inspect
 
 class JsonFormatter(logging.Formatter):
     def format(self, record):
