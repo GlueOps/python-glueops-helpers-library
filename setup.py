@@ -1,9 +1,4 @@
 
-### 6. **setup.py**
-
-A basic setup file for packaging. This will need more details based on your project's requirements.
-
-```python
 from setuptools import setup, find_packages
 
 setup(
