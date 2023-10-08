@@ -20,7 +20,7 @@ setup(
         'gunicorn==21.2.0',
         'PyYAML==6.0.1',
         'python-dotenv==1.0.0',
-        'smart-open=6.4.0'
+        'smart-open==6.4.0'
     ],
     entry_points={
         # If needed, you can add entry points for command line utilities here
