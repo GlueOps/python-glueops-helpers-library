@@ -15,7 +15,12 @@ class JsonFormatter(logging.Formatter):
 
         return json.dumps(log_entry)
 
-def configure_logger(name, level=logging.INFO):
+def configure_logger(name=None, level=logging.INFO):
+    if name is None:
+        frame = inspect.stack()[1]
+        module = inspect.getmodule(frame[0])
+        name = module.__name__
+
     json_formatter = JsonFormatter()
     handler = logging.StreamHandler()
     handler.setFormatter(json_formatter)
