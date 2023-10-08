@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='glueops-helpers',
-    version='0.0.6',
+    version='0.0.7',
     packages=find_packages(),
     install_requires=[
         'requests==2.31.0',
@@ -20,7 +20,8 @@ setup(
         'gunicorn==21.2.0',
         'PyYAML==6.0.1',
         'python-dotenv==1.0.0',
-        'smart-open==6.4.0'
+        'smart-open==6.4.0',
+        'deepdiff==6.6.0'
     ],
     entry_points={
         # If needed, you can add entry points for command line utilities here
