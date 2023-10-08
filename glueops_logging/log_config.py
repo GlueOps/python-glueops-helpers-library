@@ -14,3 +14,14 @@ class JsonFormatter(logging.Formatter):
             log_entry['exception'] = self.formatException(record.exc_info)
 
         return json.dumps(log_entry)
+
+def configure_logger(name='GLUEOPS_WAF_OPERATOR', level=logging.INFO):
+    json_formatter = JsonFormatter()
+    handler = logging.StreamHandler()
+    handler.setFormatter(json_formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
