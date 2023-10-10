@@ -15,9 +15,8 @@ def extract_serial_number_from_cert_string(cert_string):
         if len(hex_serial) % 2 != 0:
             hex_serial = '0' + hex_serial
         
-        # Insert colons between every 2 characters
-        colon_separated_serial = ":".join(hex_serial[i:i+2] for i in range(0, len(hex_serial), 2))
-        return colon_separated_serial
+        # Return serial with colons between every 2 characters
+        return ":".join(hex_serial[i:i+2] for i in range(0, len(hex_serial), 2))
 
     except (ValueError, UnsupportedAlgorithm, InvalidSignature) as e:
         # You can specify more exceptions as needed based on the specific errors you're encountering.
