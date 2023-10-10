@@ -1,6 +1,6 @@
 import zlib
 
-def string_to_crc32(input_string):
+def string_to_crc32(input_string: str) -> str:
     """Compute CRC32 checksum for a given string and return it in hexadecimal format."""
     # Encode the string to bytes
     data_bytes = input_string.encode('utf-8')
@@ -9,6 +9,4 @@ def string_to_crc32(input_string):
     checksum = zlib.crc32(data_bytes) & 0xffffffff
     
     # Convert checksum to hexadecimal
-    hex_checksum = hex(checksum)
-    
-    return hex_checksum
+    return hex(checksum)
