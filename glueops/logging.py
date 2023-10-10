@@ -1,6 +1,7 @@
-import logging
-import json
 import inspect
+import json
+import logging
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record):
@@ -16,7 +17,8 @@ class JsonFormatter(logging.Formatter):
 
         return json.dumps(log_entry)
 
-def configure(name=None, level=logging.INFO):
+
+def configure(name=None, level=logging.INFO, *handlers):
     if name is None:
         frame = inspect.stack()[1]
         module = inspect.getmodule(frame[0])
@@ -25,11 +27,20 @@ def configure(name=None, level=logging.INFO):
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    # Check if logger already has handlers attached, to avoid duplicate logs
-    if not logger.hasHandlers():
-        json_formatter = JsonFormatter()
-        handler = logging.StreamHandler()
-        handler.setFormatter(json_formatter)
+    # create default formatter and handler
+    default_handler = logging.StreamHandler()
+    json_formatter = JsonFormatter()
+    default_handler.setFormatter(json_formatter)
+
+    # remove handlers not configured by this module
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # add default handler
+    logger.addHandler(default_handler)
+
+    # add custom handlers
+    for handler in handlers:
         logger.addHandler(handler)
 
     return logger
