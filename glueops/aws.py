@@ -15,8 +15,7 @@ def get_resource_arns_using_tags(tags, aws_resource_filters):
         ],
         ResourceTypeFilters=aws_resource_filters
     )
-
-    arns = [item['ResourceARN']
-            for item in response.get('ResourceTagMappingList', [])]
-
-    return arns
+    return [
+        item['ResourceARN']
+        for item in response.get('ResourceTagMappingList', [])
+    ]
