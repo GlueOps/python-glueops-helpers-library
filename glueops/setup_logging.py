@@ -1,7 +1,7 @@
 import inspect
 import json
 import logging
-from typing import Union
+from typing import List, Union
 
 
 class JsonFormatter(logging.Formatter):
@@ -20,17 +20,17 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure(
-    name=None,
+    name: str=None,
     level: Union[str, int]=logging.ERROR,
-    *handlers: logging.Handler
+    handlers: List[logging.Handler]= None
 ) -> logging.Logger:
     """Configure and return a logger with GlueOps default configuration
 
     Args:
-        name (_type_, optional): The name of the logger. Defaults to None.
+        name (str, optional): The name of the logger. Defaults to None.
         level (Union[str, int], optional): The log level, as an int or str. Defaults to logging.ERROR.
             Must be less restrictive than the level applied to additional handlers for those handlers to receive logs
-        *handlers (logging.Handler, optional): Add any additional handlers that may be desired.
+        handlers (List[logging.Handler], optional): List of any additional handlers that may be desired. Defaults to None.
 
     Returns:
         logging.Logger: Instance of configured logger
@@ -39,6 +39,9 @@ def configure(
         frame = inspect.stack()[1]
         module = inspect.getmodule(frame[0])
         name = module.__name__ if module else "defaultLogger"
+
+    if handlers is None:
+        handlers = []
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
