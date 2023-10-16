@@ -1,4 +1,5 @@
 import zlib
+import hashlib
 
 def string_to_crc32(input_string: str) -> str:
     """Compute CRC32 checksum for a given string and return it in hexadecimal format."""
@@ -10,3 +11,8 @@ def string_to_crc32(input_string: str) -> str:
     
     # Convert checksum to hexadecimal
     return hex(checksum)
+
+def compute_sha224(text):
+    sha224_hash = hashlib.sha224()
+    sha224_hash.update(text.encode('utf-8'))
+    return sha224_hash.hexdigest()
