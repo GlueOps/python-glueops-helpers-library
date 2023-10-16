@@ -16,5 +16,5 @@ def compute_sha224(input_string: str) -> str:
     """Compute SHA224 checksum for a given string and return it in hexadecimal format."""
     
     sha224_hash = hashlib.sha224()
-    sha224_hash.update(text.encode('utf-8'))
+    sha224_hash.update(input_string.encode('utf-8'))
     return sha224_hash.hexdigest()
