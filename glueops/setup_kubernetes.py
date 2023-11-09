@@ -2,8 +2,6 @@ import os
 import glueops.setup_logging
 import kubernetes
 
-logger = glueops.setup_logging.configure(level=os.environ.get('LOG_LEVEL', 'INFO'))
-
 def load_kubernetes_config(logger):
     try:
         if os.getenv('KUBERNETES_SERVICE_HOST'):
