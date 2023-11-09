@@ -1,5 +1,4 @@
 import os
-import glueops.setup_logging
 import kubernetes
 
 def load_kubernetes_config(logger):
