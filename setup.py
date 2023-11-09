@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='glueops-helpers',
-    version='0.3.0-alpha1',
+    version='0.3.0-alpha2',
     packages=find_packages(),
     install_requires=[
         'requests',
