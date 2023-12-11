@@ -69,7 +69,7 @@ class VaultClient:
         if path.startswith("secret/") and not path.startswith("secret/data/"):
             return path.replace("secret/", "secret/data/")
         return path
-    
+
     def _vault_auth(self):
         if not self.vault_token:
             self.vault_token = self._get_vault_token_via_kube_auth()
@@ -78,14 +78,14 @@ class VaultClient:
         }
         if self.pomerium_cookie:
             self.headers["cookie"] = f"_pomerium={self.pomerium_cookie}"
-    
+
     @vault_response_handler
     def _query_vault(
         self,
         secret_path: str
     ):
         self._vault_auth()
-        
+
         secret_path = self._adjust_path(secret_path)
 
         return requests.get(
@@ -102,7 +102,7 @@ class VaultClient:
         self._vault_auth()
         response_data = self._query_vault(
             secret_path=secret_path
-        )        
+        )
         if 'data' not in response_data:
             raise Exception("Missing data.")
 
@@ -120,7 +120,7 @@ class VaultClient:
         data: dict
     ):
         self._vault_auth()
-        
+
         secret_path = self._adjust_path(secret_path)
 
         write_vault_path=f"{self.vault_url}/v1/{secret_path}"
