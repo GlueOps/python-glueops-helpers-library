@@ -82,7 +82,7 @@ class GetOutlineClient:
         url = f"{self.api_url}/api/documents.list"
         payload = {
             "parentDocumentId": parent_document_id,
-            "limit": 1,
+            "limit": 100,
             "offset": 0
         }
         all_ids = []
