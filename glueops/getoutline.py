@@ -67,28 +67,44 @@ class GetOutlineClient:
             logger.error(f"Error getting parent document UUID: {e}")
             return None
 
-    def get_children_documents_to_delete(self, parent_document_id):
-        """
-        Retrieves a list of child document IDs under the specified parent document.
+def get_children_documents_to_delete(self, parent_document_id):
+    """
+    Retrieves a list of child document IDs under the specified parent document.
 
-        :param parent_document_id: The UUID of the parent document.
-        :return: A list of child document IDs.
-        """
-        url = f"{self.api_url}/api/documents.list"
-        payload = {
-            "parentDocumentId": parent_document_id
-        }
+    :param parent_document_id: The UUID of the parent document.
+    :return: A list of child document IDs.
+    """
+    url = f"{self.api_url}/api/documents.list"
+    payload = {
+        "parentDocumentId": parent_document_id,
+        "limit": 1,
+        "offset": 0
+    }
+    all_ids = []
 
-        try:
+    try:
+        while True:
             response = requests.post(url, json=payload, headers=self.headers)
             response.raise_for_status()
-            child_docs = response.json().get("data", [])
+            data = response.json()
+            child_docs = data.get("data", [])
             ids = [doc.get("id") for doc in child_docs if "id" in doc]
-            logger.debug(f"Child document IDs to delete: {ids}")
-            return ids
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error getting children documents: {e}")
-            return []
+            all_ids.extend(ids)
+            
+            # Check if there is a next page
+            pagination = data.get("pagination", {})
+            next_path = pagination.get("nextPath")
+            if not next_path:
+                break
+            
+            # Update the payload for the next request
+            payload["offset"] += payload["limit"]
+
+        logger.debug(f"Child document IDs to delete: {all_ids}")
+        return all_ids
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error getting children documents: {e}")
+        return []
 
     def delete_document(self, document_id):
         """
