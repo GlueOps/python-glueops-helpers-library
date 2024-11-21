@@ -88,13 +88,13 @@ class GetOutlineClient:
                 response.raise_for_status()
                 data = response.json()
                 child_docs = data.get("data", [])
-                ids = [doc.get("id") for doc in child_docs if "id" in doc]
-                all_ids.extend(ids)
+                new_ids = [doc.get("id") for doc in child_docs if "id" in doc]
+                all_ids.extend(new_ids)
                 
                 # Check if there is a next page
                 pagination = data.get("pagination", {})
                 next_path = pagination.get("nextPath")
-                if not next_path:
+                if len(new_ids) == 0 or not next_path:
                     break
                 
                 # Update the payload for the next request
