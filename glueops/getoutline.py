@@ -1,6 +1,7 @@
 import requests
 import os
 from glueops import setup_logging
+import traceback
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 logger = setup_logging.configure(level=LOG_LEVEL)
@@ -45,6 +46,8 @@ class GetOutlineClient:
             logger.info(f"Document update response code: {response.status_code}")
         except requests.exceptions.RequestException as e:
             logger.error(f"Error updating document: {e}")
+            logger.error(traceback.format_exc())
+            raise
 
     def get_document_uuid(self):
         """
@@ -65,7 +68,9 @@ class GetOutlineClient:
             return parent_id
         except requests.exceptions.RequestException as e:
             logger.error(f"Error getting parent document UUID: {e}")
-            return None
+            logger.error(traceback.format_exc())
+            raise
+
 
     def get_children_documents_to_delete(self, parent_document_id):
         """
@@ -104,7 +109,9 @@ class GetOutlineClient:
             return all_ids
         except requests.exceptions.RequestException as e:
             logger.error(f"Error getting children documents: {e}")
-            return []
+            logger.error(traceback.format_exc())
+            raise
+
 
     def delete_document(self, document_id):
         """
@@ -125,7 +132,9 @@ class GetOutlineClient:
             return True
         except requests.exceptions.RequestException as e:
             logger.error(f"Error deleting document {document_id}: {e}")
-            return False
+            logger.error(traceback.format_exc())
+            raise
+
 
     def create_document(self, parent_document_id, title, text):
         """
@@ -151,4 +160,6 @@ class GetOutlineClient:
             return True
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating document '{title}': {e}")
-            return False
+            logger.error(traceback.format_exc())
+            raise
+
