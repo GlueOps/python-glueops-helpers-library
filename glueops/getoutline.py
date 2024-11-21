@@ -1,5 +1,5 @@
 import requests
-import setup_logging
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 logger = setup_logging.configure(level=LOG_LEVEL)
 
