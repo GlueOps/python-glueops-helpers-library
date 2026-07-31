@@ -225,13 +225,41 @@ class ProxmoxClient:
         except Exception as e:
             logger.error(f"Failed to delete ISO {iso_filename}: {e}")
 
-    async def delete_isos_matching(self, filename_regex: str) -> int:
+    async def referenced_iso_volids(self) -> set:
+        """Return every iso volid referenced by any qemu VM config cluster-wide.
+
+        Proxmox does not refcount iso content — deleting an attached ISO succeeds
+        and breaks the VM — so 'is anything using this?' can only be answered by
+        scanning VM configs (e.g. ide2: 'storage:iso/x.iso,media=cdrom')."""
+        referenced = set()
+        for n in await self.list_nodes():
+            try:
+                vms = await self.list_node_vms(n["node"])
+            except (httpx.HTTPStatusError, httpx.TransportError):
+                continue
+            for vm in vms or []:
+                try:
+                    config = await self.get_vm_config(n["node"], str(vm["vmid"]))
+                except (httpx.HTTPStatusError, httpx.TransportError):
+                    continue
+                for value in config.values():
+                    if not isinstance(value, str) or ":iso/" not in value:
+                        continue
+                    for part in value.split(","):
+                        if ":iso/" in part:
+                            referenced.add(part.split("=", 1)[-1].strip())
+        return referenced
+
+    async def delete_isos_matching(self, filename_regex: str, skip_in_use: bool = True) -> int:
         """Best-effort deletion of ISO volumes whose filename matches the regex,
         swept across every node's storage (VM purge never removes standalone iso
-        content, so orphan cleanup needs an explicit sweep). Returns count deleted."""
+        content, so orphan cleanup needs an explicit sweep). Returns count deleted.
+
+        With skip_in_use (default), any candidate still referenced by a VM config
+        is skipped with a warning — Proxmox itself would delete it regardless."""
         pattern = re.compile(rf"^{re.escape(self.storage)}:iso/(?:{filename_regex})$")
         seen = set()
-        deleted = 0
+        candidates = []
         for n in await self.list_nodes():
             try:
                 content = await self._get(f"/nodes/{n['node']}/storage/{self.storage}/content", content="iso")
@@ -242,11 +270,20 @@ class ProxmoxClient:
                 if volid in seen or not pattern.match(volid):
                     continue  # `seen` dedupes shared storage listed under every node
                 seen.add(volid)
-                try:
-                    await self._delete_iso_volid(n["node"], volid)
-                    deleted += 1
-                except Exception as e:
-                    logger.error(f"Failed to delete ISO {volid}: {e}")
+                candidates.append((n["node"], volid))
+        if not candidates:
+            return 0
+        referenced = await self.referenced_iso_volids() if skip_in_use else set()
+        deleted = 0
+        for node, volid in candidates:
+            if volid in referenced:
+                logger.warning(f"Skipping ISO {volid}: still referenced by a VM config")
+                continue
+            try:
+                await self._delete_iso_volid(node, volid)
+                deleted += 1
+            except Exception as e:
+                logger.error(f"Failed to delete ISO {volid}: {e}")
         return deleted
 
     # --- VM lifecycle ------------------------------------------------------------

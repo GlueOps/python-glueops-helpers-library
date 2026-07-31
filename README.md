@@ -7,7 +7,7 @@ The GlueOps Helpers Library is a collection of utility functions and classes des
 To install the GlueOps Helpers Library, you can use pip with the following command:
 
 ```bash
-pip install https://github.com/GlueOps/python-glueops-helpers-library/archive/refs/tags/v0.7.0.zip
+pip install https://github.com/GlueOps/python-glueops-helpers-library/archive/refs/tags/v0.7.1.zip
 ```
 
 # Usage
@@ -126,7 +126,8 @@ ip = await client.get_vm_ipv4("node1", vmid)
 await client.eject_and_delete_iso("node1", vmid, "my-tenant-vm1-cloudinit.iso")
 
 # Later: find and delete everything for a tenant by tags. VM purge never removes
-# standalone ISO volumes, so also sweep any orphaned cloud-init ISOs. Keep the
+# standalone ISO volumes, so also sweep any orphaned cloud-init ISOs (the sweep
+# skips any ISO still referenced by a VM config). Keep the
 # tenant prefix in ISO names AND in the sweep regex — an unscoped pattern would
 # delete other tenants' in-flight cloud-init ISOs on a shared cluster.
 for vm in await client.list_vms_by_tags(["my-app", "my-tenant"]):
