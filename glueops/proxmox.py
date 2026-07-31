@@ -215,69 +215,122 @@ class ProxmoxClient:
             await self.poll_task(result)
 
     async def eject_and_delete_iso(self, node: str, vmid: str, iso_filename: str):
-        """Best-effort: detach the ide2 cdrom and delete the ISO volume."""
+        """Best-effort: detach the ide2 cdrom, then delete the ISO volume.
+
+        If the eject fails (VM gone, guest-locked tray, hotplug disabled) the
+        volume is NOT deleted: the VM config may still reference it (with
+        onboot the next hypervisor boot would fail on the missing volume), and
+        the same filename may meanwhile belong to a successor VM's fresh ISO.
+        Leftovers are cleaned by delete_isos_matching, whose in-use check makes
+        deletion safe."""
         try:
             await self.update_vm_config(node, vmid, ide2="none,media=cdrom")
         except Exception as e:
-            logger.error(f"Failed to eject ISO from VM {vmid}: {e}")
+            logger.error(f"Failed to eject ISO from VM {vmid}: {e}; leaving {iso_filename} for the orphan sweep")
+            return
         try:
             await self._delete_iso_volid(node, f"{self.storage}:iso/{iso_filename}")
         except Exception as e:
             logger.error(f"Failed to delete ISO {iso_filename}: {e}")
 
+    @staticmethod
+    def _collect_iso_volids(values, referenced: set):
+        for value in values:
+            if not isinstance(value, str) or ":iso/" not in value:
+                continue
+            for part in value.split(","):
+                if ":iso/" in part:
+                    referenced.add(part.split("=", 1)[-1].strip())
+
     async def referenced_iso_volids(self) -> set:
-        """Return every iso volid referenced by any qemu VM config cluster-wide.
+        """Return every iso volid referenced by any qemu VM cluster-wide: current
+        config values, PENDING values (GET /config would return pending-applied
+        values, hiding e.g. an ISO whose eject is still pending), and every
+        snapshot's config (a snapshot rollback restores its ISO reference).
 
         Proxmox does not refcount iso content — deleting an attached ISO succeeds
-        and breaks the VM — so 'is anything using this?' can only be answered by
-        scanning VM configs (e.g. ide2: 'storage:iso/x.iso,media=cdrom')."""
+        and breaks the VM — so this scan is the only 'in use' signal there is.
+
+        Fails CLOSED: raises RuntimeError if any node is offline or any per-VM
+        fetch fails, because an incomplete reference set must not authorize
+        deletion (a shared-storage ISO could be referenced by an unreachable
+        node's VM)."""
         referenced = set()
-        for n in await self.list_nodes():
-            try:
-                vms = await self.list_node_vms(n["node"])
-            except (httpx.HTTPStatusError, httpx.TransportError):
-                continue
+        nodes = await self.list_nodes()
+        offline = [n["node"] for n in nodes if n.get("status") != "online"]
+        if offline:
+            raise RuntimeError(f"ISO reference scan incomplete: node(s) not online: {', '.join(offline)}")
+        for n in nodes:
+            node = n["node"]
+            vms = await self.list_node_vms(node)
             for vm in vms or []:
-                try:
-                    config = await self.get_vm_config(n["node"], str(vm["vmid"]))
-                except (httpx.HTTPStatusError, httpx.TransportError):
-                    continue
-                for value in config.values():
-                    if not isinstance(value, str) or ":iso/" not in value:
+                vmid = str(vm["vmid"])
+                pending = await self._get(f"/nodes/{node}/qemu/{vmid}/pending")
+                for entry in pending or []:
+                    self._collect_iso_volids([entry.get("value"), entry.get("pending")], referenced)
+                snapshots = await self._get(f"/nodes/{node}/qemu/{vmid}/snapshot")
+                for snap in snapshots or []:
+                    name = snap.get("name")
+                    if not name or name == "current":
                         continue
-                    for part in value.split(","):
-                        if ":iso/" in part:
-                            referenced.add(part.split("=", 1)[-1].strip())
+                    snap_config = await self._get(f"/nodes/{node}/qemu/{vmid}/config", snapshot=name)
+                    self._collect_iso_volids((snap_config or {}).values(), referenced)
         return referenced
+
+    async def _storage_is_shared(self, node: str) -> bool:
+        status = await self.get_storage_status(node)
+        return bool(status.get("shared"))
 
     async def delete_isos_matching(self, filename_regex: str, skip_in_use: bool = True) -> int:
         """Best-effort deletion of ISO volumes whose filename matches the regex,
         swept across every node's storage (VM purge never removes standalone iso
         content, so orphan cleanup needs an explicit sweep). Returns count deleted.
 
-        With skip_in_use (default), any candidate still referenced by a VM config
-        is skipped with a warning — Proxmox itself would delete it regardless."""
+        With skip_in_use (default), candidates still referenced by any VM config
+        (current, pending, or snapshot) are skipped with a warning — Proxmox
+        itself would delete them regardless. If the reference scan cannot be
+        completed (offline node, failed fetch), NOTHING is deleted this sweep;
+        orphans self-heal on a later sweep, wrongly deleted ISOs don't.
+
+        On shared storage identical volids across nodes are one file (deduped);
+        on local storage the same volid per node is a distinct file and each
+        node's copy is deleted separately."""
         pattern = re.compile(rf"^{re.escape(self.storage)}:iso/(?:{filename_regex})$")
+        shared = None
         seen = set()
         candidates = []
         for n in await self.list_nodes():
+            node = n["node"]
             try:
-                content = await self._get(f"/nodes/{n['node']}/storage/{self.storage}/content", content="iso")
+                content = await self._get(f"/nodes/{node}/storage/{self.storage}/content", content="iso")
             except (httpx.HTTPStatusError, httpx.TransportError):
                 continue  # storage not present/available on this node
+            if shared is None:
+                try:
+                    shared = await self._storage_is_shared(node)
+                except (httpx.HTTPStatusError, httpx.TransportError):
+                    shared = False  # assume local: per-node deletion covers both cases
             for v in content or []:
                 volid = v["volid"]
-                if volid in seen or not pattern.match(volid):
-                    continue  # `seen` dedupes shared storage listed under every node
-                seen.add(volid)
-                candidates.append((n["node"], volid))
+                key = volid if shared else (node, volid)
+                if key in seen or not pattern.match(volid):
+                    continue
+                seen.add(key)
+                candidates.append((node, volid))
         if not candidates:
             return 0
-        referenced = await self.referenced_iso_volids() if skip_in_use else set()
+        if skip_in_use:
+            try:
+                referenced = await self.referenced_iso_volids()
+            except Exception as e:
+                logger.warning(f"Skipping ISO sweep ({len(candidates)} candidate(s)): {e}")
+                return 0
+        else:
+            referenced = set()
         deleted = 0
         for node, volid in candidates:
             if volid in referenced:
-                logger.warning(f"Skipping ISO {volid}: still referenced by a VM config")
+                logger.warning(f"Skipping ISO {volid}: still referenced by a VM config, pending change, or snapshot")
                 continue
             try:
                 await self._delete_iso_volid(node, volid)
