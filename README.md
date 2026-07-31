@@ -122,9 +122,14 @@ await client.start_vm("node1", vmid)
 await client.wait_for_cloud_init("node1", vmid)
 ip = await client.get_vm_ipv4("node1", vmid)
 
-# Later: find and delete everything for a tenant by tags
+# The cloud-init ISO often embeds credentials — remove it once the VM is up
+await client.eject_and_delete_iso("node1", vmid, "vm1-cloudinit.iso")
+
+# Later: find and delete everything for a tenant by tags. VM purge never removes
+# standalone ISO volumes, so also sweep any orphaned cloud-init ISOs.
 for vm in await client.list_vms_by_tags(["my-app", "my-tenant"]):
     await client.delete_vm(vm["node"], vm["vmid"])
+await client.delete_isos_matching(r"vm\d+-cloudinit\.iso")
 ```
 
 ## Waggle

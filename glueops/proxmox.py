@@ -252,14 +252,21 @@ class ProxmoxClient:
     # --- VM lifecycle ------------------------------------------------------------
 
     async def create_vm(self, node: str, vmid: str, vm_name: str, vcpus: int, memory_mb: int,
-                        image: str, iso_filename: str, tags: list, bridge: str,
-                        vlan_tag=None, onboot: bool = True, cpu: str = "x86-64-v2-AES"):
+                        image: str, iso_filename: str, bridge: str, tags=None,
+                        vlan_tag=None, onboot: bool = True, cpu: str = "x86-64-v2-AES",
+                        description=None):
         """Create a VM importing its disk from the cached image, with a cloud-init
-        ISO attached on ide2 and the QEMU guest agent enabled."""
+        ISO attached on ide2 and the QEMU guest agent enabled.
+
+        :param tags: Optional native Proxmox tags (lowercased to match how PVE
+            stores them, so later list_vms_by_tags matching agrees).
+        :param description: Optional VM description/notes (e.g. for consumers that
+            track managed VMs via encoded description instead of tags).
+        """
         net0 = f"virtio,bridge={bridge}"
         if vlan_tag:
             net0 += f",tag={vlan_tag}"
-        upid = await self._post(f"/nodes/{node}/qemu", data={
+        data = {
             "vmid": vmid,
             "name": vm_name,
             "memory": memory_mb,
@@ -273,19 +280,30 @@ class ProxmoxClient:
             "boot": "order=virtio0",
             "net0": net0,
             "serial0": "socket",
-            # Proxmox lowercases tags on write (default tag-style); normalize here so
-            # later tag matching agrees with what the server stores.
-            "tags": ";".join(t.lower() for t in tags),
-        })
+        }
+        if tags:
+            data["tags"] = ";".join(t.lower() for t in tags)
+        if description is not None:
+            data["description"] = description
+        upid = await self._post(f"/nodes/{node}/qemu", data=data)
         await self.poll_task(upid)
 
-    async def resize_disk(self, node: str, vmid: str, disk_gb: int):
-        result = await self._put(f"/nodes/{node}/qemu/{vmid}/resize", data={"disk": "virtio0", "size": f"{disk_gb}G"})
+    async def resize_disk(self, node: str, vmid: str, disk_gb=None, disk_mb=None):
+        """Grow the primary disk to an absolute size. Pass exactly one of disk_gb
+        or disk_mb (MB granularity for consumers whose sizes aren't whole GB)."""
+        if (disk_gb is None) == (disk_mb is None):
+            raise ValueError("Pass exactly one of disk_gb or disk_mb")
+        size = f"{disk_gb}G" if disk_gb is not None else f"{disk_mb}M"
+        result = await self._put(f"/nodes/{node}/qemu/{vmid}/resize", data={"disk": "virtio0", "size": size})
         if isinstance(result, str) and result.startswith("UPID:"):
             await self.poll_task(result)
 
     async def start_vm(self, node: str, vmid: str):
         upid = await self._post(f"/nodes/{node}/qemu/{vmid}/status/start")
+        await self.poll_task(upid)
+
+    async def stop_vm(self, node: str, vmid: str):
+        upid = await self._post(f"/nodes/{node}/qemu/{vmid}/status/stop")
         await self.poll_task(upid)
 
     @staticmethod
