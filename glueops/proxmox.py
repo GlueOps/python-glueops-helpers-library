@@ -299,6 +299,52 @@ class ProxmoxClient:
         status = await self.get_storage_status(node)
         return bool(status.get("shared"))
 
+    async def prune_import_images(self, filename_regex: str, keep: str) -> int:
+        """Delete cached import volumes matching filename_regex except `keep`.
+
+        Checksum-keyed cache names mean every image release leaves the previous
+        volume behind on each node; this reclaims that space. Import volumes are
+        only read during create_vm's disk import (nothing references them
+        afterwards), so unlike ISOs there is no attached-to-a-VM hazard — but a
+        create running concurrently on the same node could still be importing
+        from one, which is why callers should prune only the images they manage
+        and only outside their own create path.
+
+        :param keep: base name (no .qcow2) of the volume to preserve.
+        :returns: number of volumes deleted.
+        """
+        pattern = re.compile(rf"^{re.escape(self.storage)}:import/(?:{filename_regex})$")
+        keep_volid = f"{self.storage}:import/{keep}.qcow2"
+        seen = set()
+        deleted = 0
+        shared = None
+        for n in await self.list_nodes():
+            node = n["node"]
+            try:
+                content = await self._get(f"/nodes/{node}/storage/{self.storage}/content", content="import")
+            except (httpx.HTTPStatusError, httpx.TransportError):
+                continue
+            if shared is None:
+                try:
+                    shared = await self._storage_is_shared(node)
+                except (httpx.HTTPStatusError, httpx.TransportError):
+                    shared = False
+            for v in content or []:
+                volid = v["volid"]
+                if volid == keep_volid or not pattern.match(volid):
+                    continue
+                key = volid if shared else (node, volid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    await self._delete_iso_volid(node, volid)
+                    logger.info(f"Pruned stale import image {volid} from {node}")
+                    deleted += 1
+                except Exception as e:
+                    logger.error(f"Failed to prune import image {volid}: {e}")
+        return deleted
+
     async def delete_isos_matching(self, filename_regex: str, skip_in_use: bool = True) -> int:
         """Best-effort deletion of ISO volumes whose filename matches the regex,
         swept across every node's storage (VM purge never removes standalone iso
