@@ -217,7 +217,7 @@ class ProxmoxClient:
     async def eject_and_delete_iso(self, node: str, vmid: str, iso_filename: str):
         """Best-effort: detach the ide2 cdrom and delete the ISO volume."""
         try:
-            await self._put(f"/nodes/{node}/qemu/{vmid}/config", data={"ide2": "none,media=cdrom"})
+            await self.update_vm_config(node, vmid, ide2="none,media=cdrom")
         except Exception as e:
             logger.error(f"Failed to eject ISO from VM {vmid}: {e}")
         try:
@@ -232,7 +232,7 @@ class ProxmoxClient:
         pattern = re.compile(rf"^{re.escape(self.storage)}:iso/(?:{filename_regex})$")
         seen = set()
         deleted = 0
-        for n in (await self._get("/nodes")) or []:
+        for n in await self.list_nodes():
             try:
                 content = await self._get(f"/nodes/{n['node']}/storage/{self.storage}/content", content="iso")
             except (httpx.HTTPStatusError, httpx.TransportError):
@@ -332,6 +332,29 @@ class ProxmoxClient:
                 return
             raise
 
+    async def get_vm_config(self, node: str, vmid: str) -> dict:
+        """Return the VM's current config (name, description, tags, disks, ...)."""
+        return await self._get(f"/nodes/{node}/qemu/{vmid}/config")
+
+    async def update_vm_config(self, node: str, vmid: str, **fields):
+        """Set arbitrary VM config fields, e.g. update_vm_config(node, vmid,
+        description=..., onboot=1). Used by consumers that track managed VMs
+        via an encoded description rather than native tags."""
+        await self._put(f"/nodes/{node}/qemu/{vmid}/config", data=fields)
+
+    async def list_nodes(self) -> list:
+        """Return the cluster's nodes as reported by GET /nodes (includes status,
+        maxcpu, maxmem, cpu, mem — the inputs for capacity accounting)."""
+        return await self._get("/nodes") or []
+
+    async def get_storage_status(self, node: str) -> dict:
+        """Return this client's storage status on a node (avail/total/used bytes)."""
+        return await self._get(f"/nodes/{node}/storage/{self.storage}/status")
+
+    async def list_node_vms(self, node: str) -> list:
+        """Return the qemu VMs on one node (includes per-VM cpus/maxmem/status)."""
+        return await self._get(f"/nodes/{node}/qemu") or []
+
     async def list_vms_by_tags(self, required_tags: list) -> list:
         """Return [{node, vmid, name}] for every qemu VM carrying all required_tags."""
         resources = await self._get("/cluster/resources", type="vm")
@@ -408,7 +431,8 @@ class ProxmoxClient:
             try:
                 data = await self._get(f"/nodes/{node}/qemu/{vmid}/agent/network-get-interfaces")
                 for iface in data.get("result", []):
-                    if iface.get("name", "").startswith(tuple(skip_interface_prefixes)):
+                    iface_name = iface.get("name", "")
+                    if iface_name.startswith(tuple(skip_interface_prefixes)):
                         continue
                     for addr in iface.get("ip-addresses", []):
                         if addr.get("ip-address-type") != "ipv4":
@@ -420,7 +444,7 @@ class ProxmoxClient:
                             continue
                         if ip.is_loopback or ip.is_link_local or ip.is_unspecified:
                             continue
-                        logger.info(f"VM {vmid}: found IPv4 {ip} on interface {iface['name']}")
+                        logger.info(f"VM {vmid}: found IPv4 {ip} on interface {iface_name}")
                         return str(ip)
             except (httpx.HTTPStatusError, httpx.TransportError) as e:
                 logger.debug(f"VM {vmid}: guest agent network query not ready: {e}")

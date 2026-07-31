@@ -112,24 +112,26 @@ client = ProxmoxClient(
 )
 
 await client.ensure_image_cached("node1", "debian-13-generic-amd64")
-iso = build_cloudinit_iso(user_data=b"#cloud-config\n...", meta_data=b"instance-id: vm1\n")
-await client.upload_iso("node1", "vm1-cloudinit.iso", iso)
+iso = build_cloudinit_iso(user_data=b"#cloud-config\n...", meta_data=b"instance-id: my-tenant-vm1\n")
+await client.upload_iso("node1", "my-tenant-vm1-cloudinit.iso", iso)
 vmid = await client.get_next_vmid()
-await client.create_vm(node="node1", vmid=vmid, vm_name="vm1", vcpus=2, memory_mb=4096,
-                       image="debian-13-generic-amd64", iso_filename="vm1-cloudinit.iso",
+await client.create_vm(node="node1", vmid=vmid, vm_name="my-tenant-vm1", vcpus=2, memory_mb=4096,
+                       image="debian-13-generic-amd64", iso_filename="my-tenant-vm1-cloudinit.iso",
                        tags=["my-app", "my-tenant"], bridge="vmbr_public")
 await client.start_vm("node1", vmid)
 await client.wait_for_cloud_init("node1", vmid)
 ip = await client.get_vm_ipv4("node1", vmid)
 
 # The cloud-init ISO often embeds credentials — remove it once the VM is up
-await client.eject_and_delete_iso("node1", vmid, "vm1-cloudinit.iso")
+await client.eject_and_delete_iso("node1", vmid, "my-tenant-vm1-cloudinit.iso")
 
 # Later: find and delete everything for a tenant by tags. VM purge never removes
-# standalone ISO volumes, so also sweep any orphaned cloud-init ISOs.
+# standalone ISO volumes, so also sweep any orphaned cloud-init ISOs. Keep the
+# tenant prefix in ISO names AND in the sweep regex — an unscoped pattern would
+# delete other tenants' in-flight cloud-init ISOs on a shared cluster.
 for vm in await client.list_vms_by_tags(["my-app", "my-tenant"]):
     await client.delete_vm(vm["node"], vm["vmid"])
-await client.delete_isos_matching(r"vm\d+-cloudinit\.iso")
+await client.delete_isos_matching(r"my-tenant-vm\d+-cloudinit\.iso")
 ```
 
 ## Waggle
