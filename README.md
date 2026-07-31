@@ -7,7 +7,7 @@ The GlueOps Helpers Library is a collection of utility functions and classes des
 To install the GlueOps Helpers Library, you can use pip with the following command:
 
 ```bash
-pip install https://github.com/GlueOps/python-glueops-helpers-library/archive/refs/tags/v0.7.4.zip
+pip install https://github.com/GlueOps/python-glueops-helpers-library/archive/refs/tags/v0.7.5.zip
 ```
 
 # Usage

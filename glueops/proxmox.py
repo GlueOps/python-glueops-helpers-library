@@ -132,8 +132,15 @@ class ProxmoxClient:
 
     # --- Tasks ---------------------------------------------------------------
 
-    async def poll_task(self, upid: str, timeout: float = 600.0):
+    async def poll_task(self, upid: str, timeout: float = 600.0,
+                        initial_interval: float = 0.25, max_interval: float = 3.0):
         """Wait for a Proxmox task (UPID) to finish; raise on failure or timeout.
+
+        Polls with exponential backoff from initial_interval up to max_interval:
+        most tasks (VM stop/destroy/start/config) finish in well under a second,
+        so a flat multi-second interval would add that latency to every single
+        one — a VM delete alone is two tasks. Long tasks (image downloads) settle
+        at max_interval, so the extra requests are negligible for them.
 
         On timeout the task is best-effort stopped so an abandoned task (e.g. a
         wedged download-url holding its target file) doesn't block retries with 409s.
@@ -141,6 +148,7 @@ class ProxmoxClient:
         task_node = upid.split(":")[1]
         encoded = urllib.parse.quote(upid, safe="")
         deadline = asyncio.get_running_loop().time() + timeout
+        interval = initial_interval
         while True:
             data = await self._get(f"/nodes/{task_node}/tasks/{encoded}/status")
             if data["status"] == "stopped":
@@ -154,7 +162,8 @@ class ProxmoxClient:
                 except Exception as e:
                     logger.error(f"Failed to stop stalled Proxmox task {upid}: {e}")
                 raise TimeoutError(f"Proxmox task {upid} still running after {timeout:.0f}s; check the task log in the Proxmox UI")
-            await asyncio.sleep(3)
+            await asyncio.sleep(interval)
+            interval = min(interval * 2, max_interval)
 
     # --- Images & ISOs ---------------------------------------------------------
 
