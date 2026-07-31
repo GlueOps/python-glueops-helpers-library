@@ -163,24 +163,42 @@ class ProxmoxClient:
         caller can claim the same id; retry VM creation on conflict."""
         return await self._get("/cluster/nextid")
 
-    async def ensure_image_cached(self, node: str, image: str):
+    async def ensure_image_cached(self, node: str, image: str, checksum=None,
+                                  checksum_algorithm: str = "sha256", cache_name=None) -> str:
         """Download <image>.qcow2 from download_server_url onto the node's storage
-        (content type "import") unless already present. Requires PVE 8.4+."""
+        (content type "import") unless already present. Requires PVE 8.4+.
+
+        :param checksum: expected digest; PVE verifies the download and fails the
+            task on mismatch, so a corrupted or truncated fetch never gets cached.
+        :param cache_name: store the volume under this name instead of <image>.
+            Pass a checksum-derived name (e.g. "<image>-<sha12>") to make cache
+            freshness decidable — the node's cached copy is only reused when it
+            was fetched for the same digest, so new releases re-download instead
+            of being masked by a stale same-named volume. PVE exposes no digest
+            for stored volumes, which is why identity has to live in the name.
+        :returns: the cached volume's base name (pass to create_vm's image param).
+        """
         if not self.download_server_url:
             raise ValueError("download_server_url is required for ensure_image_cached")
+        cache_name = cache_name or image
         content = await self._get(f"/nodes/{node}/storage/{self.storage}/content", content="import")
-        volid = f"{self.storage}:import/{image}.qcow2"
+        volid = f"{self.storage}:import/{cache_name}.qcow2"
         if volid in {v["volid"] for v in (content or [])}:
-            logger.info(f"Image {image} already cached on {node}")
-            return
-        logger.info(f"Downloading {image} to {node}")
+            logger.info(f"Image {cache_name} already cached on {node}")
+            return cache_name
+        logger.info(f"Downloading {image} to {node} as {cache_name}")
         try:
-            upid = await self._post(f"/nodes/{node}/storage/{self.storage}/download-url", data={
+            data = {
                 "url": f"{self.download_server_url.rstrip('/')}/{image}.qcow2",
-                "filename": f"{image}.qcow2",
+                "filename": f"{cache_name}.qcow2",
                 "content": "import",
-            })
+            }
+            if checksum:
+                data["checksum"] = checksum
+                data["checksum-algorithm"] = checksum_algorithm
+            upid = await self._post(f"/nodes/{node}/storage/{self.storage}/download-url", data=data)
             await self.poll_task(upid, timeout=self.download_timeout)
+            return cache_name
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 409:
                 # Another download already in progress — wait for it to complete.
@@ -192,7 +210,7 @@ class ProxmoxClient:
                     await asyncio.sleep(5)
                     content = await self._get(f"/nodes/{node}/storage/{self.storage}/content", content="import")
                     if volid in {v["volid"] for v in (content or [])}:
-                        return
+                        return cache_name
                 raise TimeoutError(
                     f"Timed out after {self.download_timeout:.0f}s waiting for {image} on {node}; the download "
                     f"started by another request may have stalled or failed — check that node's task log, then retry."

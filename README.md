@@ -7,7 +7,7 @@ The GlueOps Helpers Library is a collection of utility functions and classes des
 To install the GlueOps Helpers Library, you can use pip with the following command:
 
 ```bash
-pip install https://github.com/GlueOps/python-glueops-helpers-library/archive/refs/tags/v0.7.2.zip
+pip install https://github.com/GlueOps/python-glueops-helpers-library/archive/refs/tags/v0.7.3.zip
 ```
 
 # Usage
@@ -111,7 +111,7 @@ client = ProxmoxClient(
     download_server_url="https://images.example.com",  # hosts <image>.qcow2
 )
 
-await client.ensure_image_cached("node1", "debian-13-generic-amd64")
+cached = await client.ensure_image_cached("node1", "debian-13-generic-amd64")  # optional: checksum=..., cache_name=...
 iso = build_cloudinit_iso(user_data=b"#cloud-config\n...", meta_data=b"instance-id: my-tenant-vm1\n")
 await client.upload_iso("node1", "my-tenant-vm1-cloudinit.iso", iso)
 vmid = await client.get_next_vmid()
