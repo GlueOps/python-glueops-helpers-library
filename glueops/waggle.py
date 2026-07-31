@@ -90,6 +90,11 @@ class WaggleClient:
                 return datacenter
         raise LookupError(f"Datacenter {name!r} not found in Waggle")
 
+    async def list_slots(self) -> list:
+        """Return all slots (t-shirt VM sizes: name, vcpu, ram_gb, disk_gb) in the org."""
+        data = await self._get("/slots")
+        return data.get("items") or []
+
     async def get_slot_by_name(self, name: str) -> dict:
         data = await self._get("/slots", name=name)
         slots = data.get("items") or []
