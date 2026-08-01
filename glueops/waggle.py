@@ -83,12 +83,24 @@ class WaggleClient:
 
     # --- Datacenters & slots -------------------------------------------------
 
-    async def get_datacenter_by_name(self, name: str) -> dict:
+    async def list_datacenters(self) -> list:
+        """Return all datacenters (Proxmox cluster endpoints) in the org."""
         data = await self._get("/datacenters")
-        for datacenter in data.get("items") or []:
+        return data.get("items") or []
+
+    async def get_datacenter_by_name(self, name: str) -> dict:
+        for datacenter in await self.list_datacenters():
             if datacenter["name"] == name:
                 return datacenter
         raise LookupError(f"Datacenter {name!r} not found in Waggle")
+
+    async def list_hypervisors(self, datacenter_id: str = None) -> list:
+        """Return hypervisors with their capacity ledger (cpu/ram_gb/disk_gb each
+        as total, reserved, used, and bookable = total - reserved - used, plus a
+        schedulable flag), optionally filtered to one datacenter."""
+        params = {"datacenter_id": datacenter_id} if datacenter_id else {}
+        data = await self._get("/hypervisors", **params)
+        return data.get("items") or []
 
     async def list_slots(self) -> list:
         """Return all slots (t-shirt VM sizes: name, vcpu, ram_gb, disk_gb) in the org."""
@@ -101,6 +113,23 @@ class WaggleClient:
         if not slots:
             raise LookupError(f"Slot {name!r} not found in Waggle")
         return slots[0]
+
+    async def list_available_slots(self, datacenter_id: str) -> list:
+        """Return the slots that can currently be placed in a datacenter: those
+        whose vcpu/ram_gb/disk_gb fit within the bookable capacity of at least
+        one schedulable hypervisor (a VM lands wholly on one hypervisor)."""
+        slots = await self.list_slots()
+        hypervisors = await self.list_hypervisors(datacenter_id)
+        schedulable = [h for h in hypervisors if h.get("schedulable")]
+        return [
+            slot for slot in slots
+            if any(
+                (h.get("cpu_bookable") or 0) >= slot["vcpu"]
+                and (h.get("ram_gb_bookable") or 0) >= slot["ram_gb"]
+                and (h.get("disk_gb_bookable") or 0) >= slot["disk_gb"]
+                for h in schedulable
+            )
+        ]
 
     # --- Pools & placements ------------------------------------------------------
 
@@ -129,6 +158,12 @@ class WaggleClient:
         await self._patch(f"/placements/{placement_id}", {"vmid": vmid})
 
     async def delete_pool(self, pool_id: str):
-        """Delete a pool and release all of its placements."""
+        """Delete a pool and release all of its placements. Idempotent: an
+        already-deleted pool (404) is treated as success, so retried deletes
+        don't fail on cleanup that has effectively happened."""
         logger.info(f"Deleting Waggle pool {pool_id}")
-        await self._delete(f"/pools/{pool_id}")
+        r = await self._client().delete(f"/pools/{pool_id}")
+        if r.status_code == 404:
+            logger.info(f"Waggle pool {pool_id} already gone")
+            return
+        self._check(r)
