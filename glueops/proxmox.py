@@ -308,7 +308,7 @@ class ProxmoxClient:
         status = await self.get_storage_status(node)
         return bool(status.get("shared"))
 
-    async def prune_import_images(self, filename_regex: str, keep: str) -> int:
+    async def prune_import_images(self, filename_regex: str, keep) -> int:
         """Delete cached import volumes matching filename_regex except `keep`.
 
         Checksum-keyed cache names mean every image release leaves the previous
@@ -317,13 +317,16 @@ class ProxmoxClient:
         afterwards), so unlike ISOs there is no attached-to-a-VM hazard — but a
         create running concurrently on the same node could still be importing
         from one, which is why callers should prune only the images they manage
-        and only outside their own create path.
+        and only outside their own create path (or exclude in-flight images
+        from the match/keep set).
 
-        :param keep: base name (no .qcow2) of the volume to preserve.
+        :param keep: base name (no .qcow2) of the volume to preserve, or an
+            iterable of such base names.
         :returns: number of volumes deleted.
         """
         pattern = re.compile(rf"^{re.escape(self.storage)}:import/(?:{filename_regex})$")
-        keep_volid = f"{self.storage}:import/{keep}.qcow2"
+        keep_names = {keep} if isinstance(keep, str) else set(keep)
+        keep_volids = {f"{self.storage}:import/{name}.qcow2" for name in keep_names}
         seen = set()
         deleted = 0
         shared = None
@@ -340,7 +343,7 @@ class ProxmoxClient:
                     shared = False
             for v in content or []:
                 volid = v["volid"]
-                if volid == keep_volid or not pattern.match(volid):
+                if volid in keep_volids or not pattern.match(volid):
                     continue
                 key = volid if shared else (node, volid)
                 if key in seen:
@@ -519,7 +522,7 @@ class ProxmoxClient:
         return await self._get(f"/nodes/{node}/qemu") or []
 
     async def list_vms_by_tags(self, required_tags: list) -> list:
-        """Return [{node, vmid, name}] for every qemu VM carrying all required_tags."""
+        """Return [{node, vmid, name, status}] for every qemu VM carrying all required_tags."""
         resources = await self._get("/cluster/resources", type="vm")
         required = {t.lower() for t in required_tags}
         matches = []
@@ -529,7 +532,12 @@ class ProxmoxClient:
             # Proxmox accepts both ";" and "," as tag separators, and stores tags lowercased
             vm_tags = {t.lower() for t in re.split(r"[;,]", r.get("tags") or "")}
             if required.issubset(vm_tags):
-                matches.append({"node": r["node"], "vmid": str(r["vmid"]), "name": r.get("name", "")})
+                matches.append({
+                    "node": r["node"],
+                    "vmid": str(r["vmid"]),
+                    "name": r.get("name", ""),
+                    "status": r.get("status", "unknown"),
+                })
         return matches
 
     # --- Guest agent ------------------------------------------------------------
